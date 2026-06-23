@@ -6,6 +6,7 @@ node_modules/
 # Expo
 .expo/
 dist/
+dist_temp/
 web-build/
 expo-env.d.ts
 
@@ -39,3 +40,17 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# local build artifacts
+app-release.apk
+app-release-*.apk
+*.apk
+*.aab
+*.whl
+
+# local build scripts
+build.bat
+
+# backups
+backup_*/
+
