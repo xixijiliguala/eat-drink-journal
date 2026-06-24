@@ -7,6 +7,7 @@ import {
   StatusBar,
   Platform,
 } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   useFonts,
   Caveat_400Regular,
@@ -21,6 +22,7 @@ import StatsPanel from './src/components/StatsPanel';
 import DrinkPicker from './src/components/DrinkPicker';
 import StickyNote from './src/components/StickyNote';
 import TarotModal from './src/components/TarotModal';
+import { PaperBackground } from './src/components/backgrounds/PaperBackground';
 
 function MainScreen() {
   const {
@@ -96,6 +98,7 @@ function MainScreen() {
 
   return (
     <View style={styles.safe}>
+      <PaperBackground />
       <StatusBar barStyle="light-content" backgroundColor={Colors.bg} />
       <ScrollView
         style={styles.scroll}
@@ -183,9 +186,11 @@ export default function App() {
   }
 
   return (
-    <AppProvider>
-      <MainScreen />
-    </AppProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AppProvider>
+        <MainScreen />
+      </AppProvider>
+    </GestureHandlerRootView>
   );
 }
 

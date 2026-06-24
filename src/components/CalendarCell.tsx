@@ -1,176 +1,254 @@
-import React, { useMemo, useRef } from 'react';
-import {
-  View,
-  Text,
-  Image,
-  Alert,
-  Animated,
-  StyleSheet,
-} from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, Pressable, StyleSheet } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withDelay,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import { formatDateKey, isToday } from '../utils/calendar';
 import { type DrinkEntry } from '../context/AppContext';
-import { Colors, Shadows } from '../styles/colors';
-import PressableBounce from './PressableBounce';
-import { getStickerCache } from '../utils/stickerCache';
+import { Colors } from '../styles/colors';
+import { FontSize, FontWeight, Motion, Spacing, Radius, ZIndex } from '../styles/tokens';
+import { StickerRenderer } from './stickers/StickerRenderer';
+import { resolveSticker, pickStickerSize, hashCode } from '../utils/stickerResolver';
 
-function hashCode(s: string): number {
-  let h = 0; for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0; return h;
-}
-
-interface Props {
+type Props = {
   date: Date;
   isCurrentScope: boolean;
   entries?: DrinkEntry[];
   onPress: (dateStr: string) => void;
   onRemoveDrink?: (dateStr: string, entryId: string) => void;
   compact?: boolean;
+};
+
+type Placed = {
+  entryId: string;
+  drinkId: string;
+  label?: string;
+  x: number;
+  y: number;
+  rotation: number;
+  scale: number;
+  delay: number;
+  size: number;
+};
+
+function layoutStickers(entries: DrinkEntry[], size: number, compact: boolean): Placed[] {
+  const stackOffset = compact ? 8 : 10;
+  const fanAngle = compact ? 9 : 11;
+  const maxShow = compact ? 4 : 5;
+  const shown = entries.slice(-maxShow).reverse();
+  return shown.map((entry, i) => {
+    const sign = i % 2 === 0 ? 1 : -1;
+    const offsetIdx = Math.ceil((i + 1) / 2);
+    const x = sign * offsetIdx * stackOffset;
+    const y = -Math.abs(offsetIdx) * (compact ? 2 : 3);
+    const rot = sign * offsetIdx * fanAngle + ((hashCode(entry.drinkId + entry.id) % 5) - 2) * 0.6;
+    return {
+      entryId: entry.id,
+      drinkId: entry.drinkId,
+      label: entry.label,
+      x,
+      y,
+      rotation: rot,
+      scale: 1,
+      delay: i * 60,
+      size,
+    };
+  });
 }
 
 export default function CalendarCell({
-  date, isCurrentScope, entries = [], onPress, onRemoveDrink, compact = false,
+  date,
+  isCurrentScope,
+  entries = [],
+  onPress,
+  onRemoveDrink,
+  compact = false,
 }: Props) {
   const dateStr = useMemo(() => formatDateKey(date), [date]);
   const today = useMemo(() => isToday(date), [date]);
-  const expandAnim = useRef(new Animated.Value(0)).current;
-  const expanded = useRef(false);
+  const [editing, setEditing] = useState(false);
+  const stickerSize = pickStickerSize(compact);
+  const placed = useMemo(() => layoutStickers(entries, stickerSize, compact), [entries, stickerSize, compact]);
 
-  const handleLongPressStack = () => {
-    expanded.current = !expanded.current;
-    Animated.spring(expandAnim, {
-      toValue: expanded.current ? 1 : 0,
-      useNativeDriver: true,
-      speed: 20,
-      bounciness: 8,
-    }).start();
-  };
+  useEffect(() => {
+    if (placed.length === 0) setEditing(false);
+  }, [placed.length]);
 
-  const handlePressDate = () => {
-    if (expanded.current) {
-      expanded.current = false;
-      Animated.spring(expandAnim, {
-        toValue: 0,
-        useNativeDriver: true,
-        speed: 25,
-        bounciness: 6,
-      }).start();
-    } else {
+  const handleEmptyPress = useCallback(() => onPress(dateStr), [onPress, dateStr]);
+  const toggleEditing = useCallback(() => {
+    if (entries.length === 0) {
       onPress(dateStr);
+      return;
     }
-  };
+    setEditing((e) => !e);
+  }, [entries.length, onPress, dateStr]);
 
-  const handleRemove = (entry: DrinkEntry) => {
-    if (!onRemoveDrink) return;
-    Alert.alert('移除饮品', '删除这张贴纸?', [
-      { text: '取消', style: 'cancel' },
-      { text: '删除', style: 'destructive', onPress: () => onRemoveDrink(dateStr, entry.id) },
-    ]);
-  };
-
-  const s = compact ? 36 : 42;
-  const stackOffset = compact ? 7 : 9;
-  const expandOffset = compact ? 28 : 38;
-  const fanAngle = compact ? 6 : 7;
+  const handleLongPressSticker = useCallback(
+    (entryId: string) => {
+      if (!onRemoveDrink) return;
+      onRemoveDrink(dateStr, entryId);
+    },
+    [dateStr, onRemoveDrink]
+  );
 
   if (entries.length === 0) {
     return (
-      <View style={{ flex: 1, margin: compact ? 3 : 4 }}>
-        <PressableBounce onPress={() => onPress(dateStr)} scaleTo={0.93} style={{ flex: 1 }}>
-          <View style={[styles.cell, compact && styles.cellCompact, !isCurrentScope && styles.cellDimmed, today && styles.cellToday]}>
-            <Text style={[styles.date, today && styles.dateToday]}>{date.getDate()}</Text>
-          </View>
-        </PressableBounce>
-      </View>
+      <Pressable onPress={handleEmptyPress} style={styles.cellWrap}>
+        <View
+          style={[
+            styles.cell,
+            compact && styles.cellCompact,
+            !isCurrentScope && styles.cellDimmed,
+            today && styles.cellToday,
+          ]}
+        >
+          <Text style={[styles.date, today && styles.dateToday]}>{date.getDate()}</Text>
+        </View>
+      </Pressable>
     );
   }
 
-  const displayEntries = [...entries].reverse();
-
   return (
-    <View style={{ flex: 1, margin: compact ? 3 : 4 }}>
-      <PressableBounce onPress={handlePressDate} onLongPress={handleLongPressStack} scaleTo={0.93} style={{ flex: 1 }}>
-        <View style={[styles.cell, compact && styles.cellCompact, !isCurrentScope && styles.cellDimmed, today && styles.cellToday]}>
+    <View style={styles.cellWrap}>
+      <Pressable onPress={toggleEditing} style={styles.cellSurface}>
+        <View
+          style={[
+            styles.cell,
+            compact && styles.cellCompact,
+            !isCurrentScope && styles.cellDimmed,
+            today && styles.cellToday,
+          ]}
+        >
           <Text style={[styles.date, today && styles.dateToday]}>{date.getDate()}</Text>
         </View>
-      </PressableBounce>
+      </Pressable>
 
       <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-        <View style={styles.stackCenter}>
-        {displayEntries.map((entry, i) => {
-          const b64 = getStickerCache(entry.drinkId);
-          const sign = i % 2 === 0 ? 1 : -1;
-          const offsetIdx = Math.ceil(i / 2);
-          const pos = sign * offsetIdx;
-          const rot = pos * fanAngle + ((hashCode(entry.drinkId) % 4) - 2) * 0.8;
-          const baseOffset = pos * stackOffset;
-          const fanOffset = pos * expandOffset;
-
-          const xOff = expandAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [baseOffset, fanOffset],
-          });
-
-          const yOff = expandAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: [Math.abs(pos) * 1.5, Math.abs(pos) * 5],
-          });
-
-          return (
-            <Animated.View
-              key={entry.id}
-              style={[
-                styles.stackItem,
-                {
-                  zIndex: entries.length - Math.abs(pos),
-                  transform: [
-                    { translateX: xOff },
-                    { translateY: yOff },
-                    { rotate: `${rot}deg` },
-                  ],
-                },
-              ]}
-            >
-              <PressableBounce
-                onPress={expanded.current ? () => handleRemove(entry) : handlePressDate}
-                scaleTo={0.85}
-              >
-                <View style={[styles.customSticker, { width: s, height: s }]}>
-                  {b64 ? (
-                    <Image source={{ uri: b64 }} style={styles.customStickerImg} />
-                  ) : (
-                    <View style={{ flex: 1, backgroundColor: Colors.cellBg, alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: s * 0.4 }}>🖼</Text>
-                    </View>
-                  )}
-                </View>
-              </PressableBounce>
-            </Animated.View>
-          );
-        })}
+        <View style={styles.stack} pointerEvents="box-none">
+          {placed.map((p) => (
+            <AnimatedSticker
+              key={p.entryId}
+              placed={p}
+              editable={editing}
+              onTap={toggleEditing}
+              onLongPress={() => handleLongPressSticker(p.entryId)}
+            />
+          ))}
         </View>
       </View>
     </View>
   );
 }
 
+type AnimatedStickerProps = {
+  placed: Placed;
+  editable: boolean;
+  onTap: () => void;
+  onLongPress: () => void;
+};
+
+function AnimatedSticker({ placed, editable, onTap, onLongPress }: AnimatedStickerProps) {
+  const resolved = useMemo(
+    () => resolveSticker(placed.drinkId, placed.entryId, placed.label),
+    [placed.drinkId, placed.entryId, placed.label]
+  );
+  const mounted = useSharedValue(0);
+
+  useEffect(() => {
+    mounted.value = withDelay(
+      placed.delay,
+      withSpring(1, Motion.springBounce)
+    );
+  }, [placed.delay, mounted]);
+
+  const styleAnim = useAnimatedStyle(() => {
+    const s = 0.4 + mounted.value * 0.6;
+    return {
+      opacity: mounted.value,
+      transform: [{ scale: s }],
+    };
+  });
+
+  return (
+    <Animated.View
+      style={[
+        styles.stickerSlot,
+        {
+          left: '50%',
+          top: '55%',
+          marginLeft: -placed.size / 2,
+          marginTop: -placed.size / 2,
+        },
+        styleAnim,
+      ]}
+      pointerEvents={editable ? 'auto' : 'box-none'}
+    >
+      <StickerRenderer
+        kind={resolved.kind}
+        uri={resolved.uri}
+        emoji={resolved.emoji}
+        brandColor={resolved.brandColor}
+        caption={resolved.caption}
+        size={placed.size}
+        rotation={placed.rotation}
+        draggable={editable}
+        onTap={onTap}
+        onLongPress={onLongPress}
+      />
+    </Animated.View>
+  );
+}
+
 const styles = StyleSheet.create({
-  cell: {
-    flex: 1, backgroundColor: Colors.cellBg, borderRadius: 12,
-    padding: 4, minHeight: 48, alignItems: 'center', justifyContent: 'center',
-  },
-  cellCompact: { minHeight: 46, padding: 4 },
-  cellDimmed: { opacity: 0.35 },
-  cellToday: { borderWidth: 1.5, borderColor: Colors.textToday, backgroundColor: Colors.bgDark },
-  date: { color: Colors.textMuted, fontSize: 11, fontWeight: '600' },
-  dateToday: { color: Colors.textToday, fontWeight: 'bold' },
-  stackCenter: {
+  cellWrap: {
     flex: 1,
-    justifyContent: 'center',
+    margin: 3,
+  },
+  cellSurface: {
+    flex: 1,
+  },
+  cell: {
+    flex: 1,
+    backgroundColor: Colors.cellBg,
+    borderRadius: Radius.md,
+    padding: Spacing.xs,
+    minHeight: 48,
     alignItems: 'center',
+    justifyContent: 'flex-start',
   },
-  stackItem: { position: 'absolute', left: 4 },
-  customSticker: {
-    borderRadius: 8, overflow: 'hidden',
-    ...Shadows.sticker,
+  cellCompact: {
+    minHeight: 46,
   },
-  customStickerImg: { width: '100%', height: '100%' },
+  cellDimmed: {
+    opacity: 0.35,
+  },
+  cellToday: {
+    borderWidth: 1.5,
+    borderColor: Colors.textToday,
+    backgroundColor: Colors.bgDark,
+  },
+  date: {
+    color: Colors.textMuted,
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.semibold,
+  },
+  dateToday: {
+    color: Colors.textToday,
+    fontWeight: FontWeight.bold,
+  },
+  stack: {
+    flex: 1,
+    position: 'relative',
+  },
+  stickerSlot: {
+    position: 'absolute',
+    width: 0,
+    height: 0,
+    zIndex: ZIndex.sticker,
+  },
 });

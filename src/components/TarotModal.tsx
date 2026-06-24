@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, Modal, ScrollView, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { X } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { drawCards, type TarotCard as TarotCardData } from '../data/tarotCards';
-import { Colors } from '../styles/colors';
+import { Colors, Shadows } from '../styles/colors';
+import { FontSize, FontWeight, Spacing, Motion } from '../styles/tokens';
 import { formatDateKey } from '../utils/calendar';
 import PressableBounce from './PressableBounce';
 import TarotCard from './TarotCard';
@@ -67,10 +70,16 @@ export default function TarotModal({ visible, onClose }: Props) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.screen}>
+        <LinearGradient
+          colors={[Colors.bgDeep, Colors.tarotCardBack, Colors.bgDeep]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
         <View style={styles.topBar}>
           <Text style={styles.topTitle}>Daily Tarot</Text>
-          <PressableBounce onPress={onClose} scaleTo={0.85} style={styles.closeBtn}>
-            <Text style={styles.closeText}>x</Text>
+          <PressableBounce onPress={onClose} haptic="light" style={styles.closeBtn}>
+            <X size={18} color={Colors.textPrimary} strokeWidth={2.2} />
           </PressableBounce>
         </View>
 
@@ -161,16 +170,19 @@ const styles = StyleSheet.create({
   },
   topTitle: {
     color: Colors.tarotGold,
-    fontSize: 24,
+    fontSize: 26,
     fontFamily: 'Caveat',
+    fontWeight: FontWeight.bold,
   },
   closeBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: Colors.cellBg,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.35)',
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
+    borderWidth: 1,
+    borderColor: Colors.borderSoft,
   },
   closeText: { color: Colors.textMuted, fontSize: 18 },
   drawPage: {

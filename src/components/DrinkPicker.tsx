@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,10 +9,17 @@ import {
   Alert,
   StyleSheet,
   Dimensions,
-  PanResponder,
-  Animated,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
+import { Camera, X, Trash2, StickyNote as StickyNoteIcon } from 'lucide-react-native';
 import { Colors, Shadows } from '../styles/colors';
+import { FontSize, FontWeight, Motion, Radius, Spacing } from '../styles/tokens';
 import * as FileSystem from 'expo-file-system/legacy';
 import PressableBounce from './PressableBounce';
 import PhotoStickerModal from './PhotoStickerModal';
@@ -30,9 +37,11 @@ interface Props {
 
 const { width: WINDOW_WIDTH } = Dimensions.get('window');
 const COLUMNS = 4;
-const ITEM_MARGIN = 8;
+const ITEM_MARGIN = 10;
 const GRID_PAD = 20;
 const ITEM_WIDTH = (WINDOW_WIDTH - GRID_PAD * 2 - ITEM_MARGIN * (COLUMNS - 1)) / COLUMNS;
+
+const AnimatedView = Animated.View;
 
 export default function DrinkPicker({
   visible,
@@ -44,7 +53,8 @@ export default function DrinkPicker({
 }: Props) {
   const [fotoVisible, setFotoVisible] = useState(false);
   const [savedStickers, setSavedStickers] = useState<CustomSticker[]>([]);
-  const sheetAnim = useRef(new Animated.Value(0)).current;
+  const sheetY = useSharedValue(800);
+  const backdropOpacity = useSharedValue(0);
 
   const refreshSaved = useCallback(async () => {
     const s = await loadSavedStickers();
@@ -54,34 +64,18 @@ export default function DrinkPicker({
   useEffect(() => {
     if (visible) {
       refreshSaved();
-      Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: true, speed: 20, bounciness: 4 }).start();
+      sheetY.value = withSpring(0, Motion.springBounce);
+      backdropOpacity.value = withTiming(1, { duration: Motion.timingBase });
     } else {
-      sheetAnim.setValue(0);
+      sheetY.value = 800;
+      backdropOpacity.value = 0;
     }
-  }, [visible, refreshSaved]);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponderCapture: (_, gs) => Math.abs(gs.dy) > 5 && Math.abs(gs.dy) > Math.abs(gs.dx),
-      onPanResponderMove: (_, gs) => {
-        if (gs.dy > 0) {
-          sheetAnim.setValue(1 - gs.dy / 400);
-        }
-      },
-      onPanResponderRelease: (_, gs) => {
-        if (gs.dy > 100 || gs.vy > 0.5) {
-          onClose();
-        } else {
-          Animated.spring(sheetAnim, { toValue: 1, useNativeDriver: true, speed: 20, bounciness: 4 }).start();
-        }
-      },
-    })
-  ).current;
+  }, [visible, refreshSaved, sheetY, backdropOpacity]);
 
   const existingItems = useMemo(() => {
     return existingEntryIds
       .map((e) => {
-        if (e.drinkId.startsWith('stkr_')) {
+        if (e.drinkId.startsWith('stkr_') || e.drinkId.startsWith('fav_')) {
           const b64 = getStickerCache(e.drinkId);
           return { entryId: e.entryId, base64: b64 ?? undefined };
         }
@@ -93,69 +87,88 @@ export default function DrinkPicker({
   const [pendingRemark, setPendingRemark] = useState('');
   const [pendingSticker, setPendingSticker] = useState<{ dateStr: string; entryId: string } | null>(null);
 
-  const confirmRemark = () => {
+  const confirmRemark = useCallback(() => {
     if (pendingSticker && dateStr) {
       onSelect(pendingSticker.dateStr, pendingSticker.entryId, pendingRemark.trim() || undefined);
     }
     setPendingSticker(null);
     setPendingRemark('');
-  };
+  }, [pendingSticker, dateStr, pendingRemark, onSelect]);
 
-  const handleSelectSaved = async (saved: CustomSticker) => {
-    if (dateStr) {
-      const b64 = `data:image/png;base64,${await FileSystem.readAsStringAsync(saved.filePath, { encoding: FileSystem.EncodingType.Base64 })}`;
+  const handleSelectSaved = useCallback(
+    async (saved: CustomSticker) => {
+      if (!dateStr) return;
+      const b64 = `data:image/png;base64,${await FileSystem.readAsStringAsync(saved.filePath, {
+        encoding: FileSystem.EncodingType.Base64,
+      })}`;
       const entryId = 'stkr_' + Date.now().toString(36);
       setStickerCache(entryId, b64);
       await saveStickerWithId(entryId, b64, saved.label);
       setPendingRemark(saved.label || '');
       setPendingSticker({ dateStr, entryId });
-    }
-  };
+    },
+    [dateStr]
+  );
 
-  const handleCustomSticker = useCallback(async (base64: string, label: string) => {
-    if (dateStr) {
+  const handleCustomSticker = useCallback(
+    async (base64: string, label: string) => {
+      if (!dateStr) return;
       const stickerId = 'stkr_' + Date.now().toString(36);
       setStickerCache(stickerId, base64);
       await saveStickerWithId(stickerId, base64, label);
       setPendingRemark(label || '');
       setPendingSticker({ dateStr, entryId: stickerId });
-    }
-  }, [dateStr]);
+    },
+    [dateStr]
+  );
 
-  const handleDeleteSaved = useCallback(async (id: string) => {
-    await deleteSavedSticker(id);
-    refreshSaved();
-  }, [refreshSaved]);
+  const handleDeleteSaved = useCallback(
+    async (id: string) => {
+      await deleteSavedSticker(id);
+      refreshSaved();
+    },
+    [refreshSaved]
+  );
 
-  const handleRemove = (entryId: string) => {
-    if (dateStr && onRemoveDrink) {
-      onRemoveDrink(dateStr, entryId);
-    }
-  };
+  const handleRemove = useCallback(
+    (entryId: string) => {
+      if (dateStr && onRemoveDrink) {
+        onRemoveDrink(dateStr, entryId);
+      }
+    },
+    [dateStr, onRemoveDrink]
+  );
 
-  const sheetStyle = {
-    transform: [{ translateY: sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [400, 0] }) }],
-    opacity: sheetAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] }),
-  };
+  const sheetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: sheetY.value }],
+  }));
+
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: backdropOpacity.value,
+  }));
 
   return (
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      animationType="none"
       onRequestClose={onClose}
     >
-      <View style={styles.overlay}>
-        <PressableBounce onPress={onClose} style={styles.backdropTouch} />
-        <Animated.View style={[styles.sheet, sheetStyle]}>
-          <View {...panResponder.panHandlers}>
-            <View style={styles.handle} />
+      <View style={styles.container}>
+        <AnimatedView style={[styles.backdrop, backdropStyle]} />
+        <PressableBounce onPress={onClose} style={styles.backdropTouch} haptic="light" />
+        <AnimatedView style={[styles.sheet, sheetStyle]}>
+          <View style={styles.handle} />
+          <View style={styles.headerRow}>
+            <Text style={styles.title}>选择贴纸</Text>
+            <PressableBounce onPress={onClose} haptic="light" style={styles.iconBtn}>
+              <X size={18} color={Colors.textMuted} strokeWidth={2.2} />
+            </PressableBounce>
           </View>
-
-          <Text style={styles.title}>选择贴纸</Text>
 
           {existingItems.length > 0 && (
             <View style={styles.existingSection}>
+              <Text style={styles.sectionTitle}>已添加</Text>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -165,17 +178,15 @@ export default function DrinkPicker({
                   <PressableBounce
                     key={entryId}
                     onPress={() => handleRemove(entryId)}
-                    scaleTo={0.85}
+                    haptic="medium"
                     style={styles.existingSticker}
                   >
                     <View style={styles.existingInner}>
-                      {base64 && (
-                        <View style={styles.existingCustomWrap}>
-                          <Image source={{ uri: base64 }} style={styles.existingCustomImg} />
-                        </View>
-                      )}
+                      {base64 ? (
+                        <Image source={{ uri: base64 }} style={styles.existingCustomImg} />
+                      ) : null}
                       <View style={styles.removeBadge}>
-                        <Text style={styles.removeBadgeText}>x</Text>
+                        <Trash2 size={10} color={Colors.white} strokeWidth={2.4} />
                       </View>
                     </View>
                   </PressableBounce>
@@ -187,10 +198,11 @@ export default function DrinkPicker({
           <View style={styles.tabRow}>
             <PressableBounce
               onPress={() => setFotoVisible(true)}
-              scaleTo={0.92}
+              haptic="light"
               style={styles.tabCamera}
             >
-              <Text style={styles.tabCameraText}>📷 拍照制作</Text>
+              <Camera size={14} color={Colors.tarotGold} strokeWidth={2.2} />
+              <Text style={styles.tabCameraText}>拍照制作</Text>
             </PressableBounce>
             <View style={styles.tabDivider} />
             <Text style={styles.sectionTitle}>常用贴纸</Text>
@@ -202,38 +214,53 @@ export default function DrinkPicker({
             showsVerticalScrollIndicator={false}
           >
             {savedStickers.length === 0 && (
-              <Text style={styles.empty}>还没有保存的贴纸{'\n'}制作贴纸后可以保存到常用</Text>
+              <View style={styles.empty}>
+                <Text style={styles.emptyEmoji}>🧋</Text>
+                <Text style={styles.emptyText}>
+                  还没有保存的贴纸{'\n'}拍照制作后可保存到常用
+                </Text>
+              </View>
             )}
             <View style={styles.grid}>
               {savedStickers.map((saved) => (
                 <View key={saved.id} style={{ width: ITEM_WIDTH }}>
                   <PressableBounce
                     onPress={() => handleSelectSaved(saved)}
-                    scaleTo={0.92}
+                    haptic="light"
                     style={{ alignItems: 'center' }}
                   >
-                    <View style={styles.savedStickerWrap}>
+                    <LinearGradient
+                      colors={['#fff', '#f5edd6']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 0, y: 1 }}
+                      style={styles.savedStickerWrap}
+                    >
                       <Image source={{ uri: saved.filePath }} style={styles.savedStickerImg} />
-                    </View>
+                    </LinearGradient>
                     {saved.label ? (
-                      <Text style={styles.savedLabel} numberOfLines={1}>{saved.label}</Text>
+                      <Text style={styles.savedLabel} numberOfLines={1}>
+                        {saved.label}
+                      </Text>
                     ) : null}
                   </PressableBounce>
                   <PressableBounce
                     onPress={() => handleDeleteSaved(saved.id)}
-                    scaleTo={0.8}
+                    haptic="light"
                     style={styles.deleteSavedBtn}
                   >
-                    <Text style={styles.deleteSavedText}>×</Text>
+                    <X size={12} color={Colors.white} strokeWidth={2.4} />
                   </PressableBounce>
                 </View>
               ))}
             </View>
           </ScrollView>
 
-          {pendingSticker && (
+          {pendingSticker ? (
             <View style={styles.remarkArea}>
-              <Text style={styles.remarkTitle}>添加备注（可选）</Text>
+              <View style={styles.remarkHeader}>
+                <StickyNoteIcon size={14} color={Colors.tarotGold} strokeWidth={2.2} />
+                <Text style={styles.remarkTitle}>添加备注（可选）</Text>
+              </View>
               <TextInput
                 style={styles.remarkInput}
                 value={pendingRemark}
@@ -241,178 +268,276 @@ export default function DrinkPicker({
                 placeholder="这杯配了什么点心..."
                 placeholderTextColor={Colors.textMuted}
                 returnKeyType="done"
+                maxLength={20}
               />
               <View style={styles.remarkBtns}>
                 <PressableBounce
-                  onPress={() => { setPendingSticker(null); setPendingRemark(''); }}
-                  scaleTo={0.92}
+                  onPress={() => {
+                    setPendingSticker(null);
+                    setPendingRemark('');
+                  }}
+                  haptic="light"
                   style={styles.remarkCancel}
                 >
                   <Text style={styles.remarkCancelText}>取消</Text>
                 </PressableBounce>
-                <PressableBounce
-                  onPress={confirmRemark}
-                  scaleTo={0.92}
-                  style={styles.remarkConfirm}
-                >
+                <PressableBounce onPress={confirmRemark} haptic="medium" style={styles.remarkConfirm}>
                   <Text style={styles.remarkConfirmText}>确认添加</Text>
                 </PressableBounce>
               </View>
             </View>
-          )}
-        </Animated.View>
+          ) : null}
+        </AnimatedView>
       </View>
 
       <PhotoStickerModal
         visible={fotoVisible}
         onClose={() => setFotoVisible(false)}
         onStickerReady={handleCustomSticker}
-          onSaveAsFavorite={async (base64: string, label: string) => {
-            try {
-              await saveAsFavorite('fav_' + Date.now().toString(36), base64, label);
-              await refreshSaved();
-            } catch (e: any) {
-              Alert.alert('保存失败', e?.message || '');
-            }
-          }}
+        onSaveAsFavorite={async (base64: string, label: string) => {
+          try {
+            await saveAsFavorite('fav_' + Date.now().toString(36), base64, label);
+            await refreshSaved();
+          } catch (e: any) {
+            Alert.alert('保存失败', e?.message || '');
+          }
+        }}
       />
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end' },
-  backdropTouch: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  container: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  backdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: Colors.scrim,
+  },
+  backdropTouch: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   sheet: {
     backgroundColor: Colors.cardBg,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 12,
-    paddingHorizontal: 16,
-    paddingBottom: 32,
-    height: '55%',
-    minHeight: 420,
-    ...Shadows.card,
+    borderTopLeftRadius: Radius.xxl,
+    borderTopRightRadius: Radius.xxl,
+    paddingTop: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing['3xl'],
+    height: '62%',
+    minHeight: 440,
+    borderTopWidth: 1,
+    borderColor: Colors.borderSoft,
+    ...Shadows.modal,
   },
   handle: {
-    width: 40, height: 5, borderRadius: 3,
-    backgroundColor: Colors.textSecondary,
-    alignSelf: 'center', marginBottom: 12,
+    width: 44,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: Colors.border,
+    alignSelf: 'center',
+    marginBottom: Spacing.md,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
   },
   title: {
-    color: Colors.white, fontSize: 16,
-    fontWeight: '600', textAlign: 'center', marginBottom: 6,
+    color: Colors.textPrimary,
+    fontSize: FontSize.xl,
+    fontWeight: FontWeight.semibold,
+    fontFamily: 'Caveat',
   },
-  existingSection: { marginBottom: 8, paddingHorizontal: 4 },
-  existingRow: { flexDirection: 'row', gap: 10 },
-  existingSticker: { width: 44, height: 44 },
-  existingInner: { position: 'relative' },
-  existingCustomWrap: {
-    width: 36, height: 36, borderRadius: 8,
-    overflow: 'hidden', borderWidth: 1.5, borderColor: Colors.white,
+  iconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surface,
   },
-  existingCustomImg: { width: '100%', height: '100%' },
-  removeBadge: {
-    position: 'absolute', top: -4, right: -4,
-    width: 18, height: 18, borderRadius: 9,
-    backgroundColor: Colors.danger,
-    justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1.5, borderColor: Colors.white,
-  },
-  removeBadgeText: { color: Colors.white, fontSize: 11, fontWeight: 'bold', marginTop: -1 },
-  tabRow: {
-    flexDirection: 'row', alignItems: 'center',
-    marginBottom: 10, paddingHorizontal: 4, gap: 10,
-  },
-  tabDivider: {
-    width: 1, height: 20, backgroundColor: Colors.border,
+  existingSection: {
+    marginBottom: Spacing.md,
   },
   sectionTitle: {
-    color: Colors.textSecondary, fontSize: 13, fontWeight: '600',
+    color: Colors.textSecondary,
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.semibold,
+    letterSpacing: 0.4,
+    marginBottom: Spacing.sm,
+  },
+  existingRow: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+  },
+  existingSticker: {
+    width: 50,
+    height: 50,
+  },
+  existingInner: {
+    position: 'relative',
+    width: 50,
+    height: 50,
+    borderRadius: Radius.sm,
+    overflow: 'hidden',
+    backgroundColor: Colors.surface,
+    borderWidth: 1.5,
+    borderColor: Colors.paper,
+  },
+  existingCustomImg: {
+    width: '100%',
+    height: '100%',
+  },
+  removeBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: Colors.danger,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: Colors.white,
+  },
+  tabRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+    gap: Spacing.md,
+  },
+  tabDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: Colors.border,
   },
   tabCamera: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.pill,
     backgroundColor: Colors.tarotCardBack,
-    borderWidth: 1, borderColor: Colors.tarotGold,
+    borderWidth: 1,
+    borderColor: Colors.tarotGold,
   },
   tabCameraText: {
-    color: Colors.tarotGold, fontSize: 12, fontWeight: '600',
+    color: Colors.tarotGold,
+    fontSize: FontSize.xs,
+    fontWeight: FontWeight.semibold,
   },
   drinkList: { flex: 1 },
-  drinkListContent: { paddingBottom: 8 },
+  drinkListContent: { paddingBottom: Spacing.md },
   grid: {
-    flexDirection: 'row', flexWrap: 'wrap',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     paddingHorizontal: 2,
+    gap: Spacing.md,
   },
   savedStickerWrap: {
-    width: ITEM_WIDTH - 16, height: ITEM_WIDTH - 16,
-    borderRadius: 12, overflow: 'hidden',
-    borderWidth: 1.5, borderColor: Colors.white,
-    backgroundColor: Colors.white,
-    marginBottom: 2,
+    width: ITEM_WIDTH - 16,
+    height: ITEM_WIDTH - 16,
+    borderRadius: Radius.md,
+    overflow: 'hidden',
+    padding: 4,
   },
-  savedStickerImg: { width: '100%', height: '100%' },
+  savedStickerImg: { width: '100%', height: '100%', borderRadius: Radius.sm },
   savedLabel: {
-    color: Colors.textSecondary,
-    fontSize: 9,
-    marginTop: 3,
+    color: Colors.textMuted,
+    fontSize: FontSize.xs,
+    marginTop: 4,
     textAlign: 'center',
   },
   deleteSavedBtn: {
-    position: 'absolute', top: -2, right: 6,
-    width: 20, height: 20, borderRadius: 10,
+    position: 'absolute',
+    top: -2,
+    right: 8,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: Colors.danger,
-    justifyContent: 'center', alignItems: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  deleteSavedText: { color: Colors.white, fontSize: 12, fontWeight: 'bold', marginTop: -1 },
   empty: {
-    color: Colors.textMuted, textAlign: 'center', marginTop: 20, fontSize: 12, lineHeight: 20,
+    alignItems: 'center',
+    paddingVertical: Spacing.xl,
+  },
+  emptyEmoji: {
+    fontSize: 36,
+    marginBottom: Spacing.sm,
+    opacity: 0.5,
+  },
+  emptyText: {
+    color: Colors.textMuted,
+    textAlign: 'center',
+    fontSize: FontSize.sm,
+    lineHeight: 20,
   },
   remarkArea: {
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border,
+    marginTop: Spacing.md,
+    paddingTop: Spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.borderSoft,
+  },
+  remarkHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: Spacing.sm,
   },
   remarkTitle: {
     color: Colors.textSecondary,
-    fontSize: 12,
-    marginBottom: 8,
+    fontSize: FontSize.sm,
   },
   remarkInput: {
     backgroundColor: Colors.cellBg,
-    color: Colors.white,
-    fontSize: 14,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 10,
+    color: Colors.textPrimary,
+    fontSize: FontSize.md,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 10,
+    marginBottom: Spacing.md,
   },
   remarkBtns: {
     flexDirection: 'row',
-    gap: 10,
+    gap: Spacing.md,
   },
   remarkCancel: {
     flex: 1,
-    backgroundColor: Colors.cellBg,
-    borderRadius: 10,
-    paddingVertical: 10,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md,
     alignItems: 'center',
   },
   remarkCancelText: {
     color: Colors.textMuted,
-    fontSize: 14,
+    fontSize: FontSize.md,
   },
   remarkConfirm: {
     flex: 1,
     backgroundColor: Colors.tarotPurple,
-    borderRadius: 10,
-    paddingVertical: 10,
+    borderRadius: Radius.md,
+    paddingVertical: Spacing.md,
     alignItems: 'center',
   },
   remarkConfirmText: {
     color: Colors.white,
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: FontSize.md,
+    fontWeight: FontWeight.semibold,
   },
 });

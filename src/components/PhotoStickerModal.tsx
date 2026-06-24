@@ -14,8 +14,10 @@ import {
   Platform,
   type LayoutChangeEvent,
 } from 'react-native';
+import { Camera, Image as ImageIcon, X } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../styles/colors';
+import { FontSize, FontWeight, Radius, Spacing } from '../styles/tokens';
 import PressableBounce from './PressableBounce';
 import { saveSticker } from '../utils/stickerStorage';
 
@@ -161,14 +163,16 @@ export default function PhotoStickerModal({ visible, onClose, onStickerReady, on
             <Text style={styles.title}>制作贴纸</Text>
             <Text style={styles.hint}>拍照或选照片，点一下饮品自动抠图</Text>
             <View style={styles.btnRow}>
-              <PressableBounce onPress={() => openPicker('camera')} scaleTo={0.92} style={styles.actionBtn}>
-                <Text style={styles.actionBtnText}>📷 拍照</Text>
+              <PressableBounce onPress={() => openPicker('camera')} haptic="light" style={styles.actionBtn}>
+                <Camera size={18} color={Colors.tarotGold} strokeWidth={2.2} />
+                <Text style={styles.actionBtnText}>拍照</Text>
               </PressableBounce>
-              <PressableBounce onPress={() => openPicker('album')} scaleTo={0.92} style={styles.actionBtn}>
-                <Text style={styles.actionBtnText}>🖼 相册</Text>
+              <PressableBounce onPress={() => openPicker('album')} haptic="light" style={styles.actionBtn}>
+                <ImageIcon size={18} color={Colors.tarotGold} strokeWidth={2.2} />
+                <Text style={styles.actionBtnText}>相册</Text>
               </PressableBounce>
             </View>
-            <PressableBounce onPress={reset} scaleTo={0.92} style={styles.cancelBtn}>
+            <PressableBounce onPress={reset} haptic="light" style={styles.cancelBtn}>
               <Text style={styles.cancelText}>取消</Text>
             </PressableBounce>
           </View>
@@ -181,8 +185,8 @@ export default function PhotoStickerModal({ visible, onClose, onStickerReady, on
     <Modal visible={visible} transparent animationType="fade" onRequestClose={reset}>
       <View style={styles.fullScreen}>
         <View style={styles.topBar}>
-          <PressableBounce onPress={reset} scaleTo={0.85} style={styles.closeBtn}>
-            <Text style={styles.closeBtnText}>✕</Text>
+          <PressableBounce onPress={reset} haptic="light" style={styles.closeBtn}>
+            <X size={18} color={Colors.textPrimary} strokeWidth={2.2} />
           </PressableBounce>
           <Text style={styles.topTitle}>
             {step === 'select' ? '点击饮品主体' : step === 'processing' ? '处理中...' : '贴纸预览'}
@@ -271,10 +275,11 @@ const styles = StyleSheet.create({
   hint: { color: Colors.textMuted, fontSize: 12, textAlign: 'center', marginBottom: 20 },
   btnRow: { flexDirection: 'row', gap: 14, marginBottom: 14 },
   actionBtn: {
-    paddingHorizontal: 32, paddingVertical: 14, borderRadius: 16,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 24, paddingVertical: 14, borderRadius: 16,
     backgroundColor: Colors.cellBg, borderWidth: 1, borderColor: Colors.tarotGold,
   },
-  actionBtnText: { color: Colors.white, fontSize: 16 },
+  actionBtnText: { color: Colors.white, fontSize: 16, fontWeight: FontWeight.semibold },
   cancelBtn: { paddingHorizontal: 24, paddingVertical: 10, borderRadius: 14, backgroundColor: Colors.tarotCardBack },
   cancelText: { color: Colors.textMuted, fontSize: 14 },
   fullScreen: {
@@ -286,8 +291,8 @@ const styles = StyleSheet.create({
   },
   topTitle: { color: Colors.white, fontSize: 18, fontWeight: '600' },
   closeBtn: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.cellBg,
-    alignItems: 'center', justifyContent: 'center',
+    width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Colors.borderSoft,
   },
   closeBtnText: { color: Colors.textMuted, fontSize: 18 },
   imageArea: { flex: 1, padding: 16 },

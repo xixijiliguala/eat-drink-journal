@@ -57,3 +57,7 @@ backup_*/
 # Claude Code config
 .claude/
 
+# npm cache (project-local to keep downloads off C:)
+.npm-cache/
+
+
