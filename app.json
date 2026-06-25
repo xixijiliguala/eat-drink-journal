@@ -1,17 +1,20 @@
 {
   "expo": {
-    "name": "drinkjournl",
-    "slug": "drinkjournl",
-    "version": "1.0.0",
+    "name": "就吃就喝",
+    "slug": "drinkjournal",
+    "version": "2.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.drinkjournal.app"
     },
     "android": {
+      "package": "com.drinkjournal.app",
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#2D2420",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -20,6 +23,16 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font",
+      "./plugins/withOnnxRuntime",
+      "./plugins/withCleartext"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "7a7eb52b-eda3-40d5-8571-ab1ba9614f84"
+      }
     }
   }
 }
